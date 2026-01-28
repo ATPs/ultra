@@ -134,6 +134,7 @@ uLTRA index genome.fasta  /full/path/to/annotation.gtf  outfolder/  [parameters]
 Important parameters: 
 
 1. `--disable_infer` can speed up the indexing considerably, but it only works if you have the `gene feature` and `transcript feature` in your GTF file.
+2. New in this repo: indexing also writes read-only mmap files (`ref_segment_sequences.mmidx/.mmdata`, `ref_flank_sequences.mmidx/.mmdata`, `ref_exon_sequences.mmidx/.mmdata`) alongside the existing pickle files. These are used by alignment to reduce RAM usage. Re-run `index` or `pipeline` once to generate them.
 
 ### Aligning
 
@@ -148,6 +149,8 @@ Important parameters:
 
 1. `--index [PATH]`: You can set a custom location of where to get the index from using, otherwise, uLTRA will try to read the index from the `outfolder/` by default. 
 2. `--prefix [PREFIX OF FILE]`: The aligned reads will be written to `outfolder/reads.sam` unless `--prefix` is set. For example, `--prefix sample_X` will output the reads in `outfolder/sample_X.sam`.
+3. New in this repo: alignment will use the mmap files if present (it falls back to the pickles if not). This reduces per-process memory usage.
+4. New in this repo: per-process temp SAM output is enabled by default to avoid large in-memory output queues. Use `--no_temp_files` to disable this and use the shared output queue instead. You can cap that queue with `--output_queue_size` (default 50).
 
 ### Pipeline
 
@@ -183,7 +186,6 @@ LICENCE
 ----------------
 
 GPL v3.0, see [LICENSE.txt](https://github.com/ksahlin/uLTRA/blob/master/LICENCE.txt).
-
 
 
 

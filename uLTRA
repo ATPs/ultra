@@ -37,6 +37,7 @@ from modules import classify_alignment2
 from modules import sam_output
 from modules import pc
 from modules import prefilter_genomic_reads
+from modules import mmap_store
 
 
 def load_reference(args):
@@ -170,6 +171,9 @@ def prep_seqs(args, refs, refs_lengths):
     help_functions.pickle_dump(index_folder, ref_segment_sequences, 'ref_segment_sequences.pickle')
     help_functions.pickle_dump(index_folder, ref_flank_sequences, 'ref_flank_sequences.pickle')
     help_functions.pickle_dump(index_folder, ref_exon_sequences, 'ref_exon_sequences.pickle')
+    mmap_store.build_sequence_store(index_folder, "ref_segment_sequences", ref_segment_sequences)
+    mmap_store.build_sequence_store(index_folder, "ref_flank_sequences", ref_flank_sequences)
+    mmap_store.build_sequence_store(index_folder, "ref_exon_sequences", ref_exon_sequences)
 
     # tiling_ref_segment_sequences = augmented_gene.get_sequences_from_choordinates(tiling_segment_id_to_choordinates, refs_id)
     # help_functions.pickle_dump(args, tiling_ref_segment_sequences, 'tiling_ref_segment_sequences.pickle')
@@ -470,6 +474,8 @@ if __name__ == '__main__':
     pipeline_parser.add_argument('--keep_temporary_files', action='store_true', help='Keeps all intermediate files used for the alignment. This parameter is manily good for bugfixing and development.')
     pipeline_parser.add_argument('--thinning', type=int, default=0, help='Seed thinning level 0-2: 0 (deactivated, default) 1 (in expectation every third base) or 2 (in expectation every fifth base). Thinning makes seedins step much faster and less memory consuming at cost of accuracy.')
     pipeline_parser.add_argument('--s', type=int, default=10, help='Strobe size (default s=10). Uses strobemers of (2, s, s+1, 35).')
+    pipeline_parser.add_argument('--no_temp_files', dest='use_temp_files', action='store_false', help='Disable per-process temp SAM output and use shared output queue.')
+    pipeline_parser.add_argument('--output_queue_size', type=int, default=50, help='Max size of output SAM queue when temp files are disabled (default 50).')
     pipeline_parser.set_defaults(which='pipeline')
 
     indexing_parser.add_argument('ref', type=str, help='Reference genome (fasta)')
@@ -516,6 +522,8 @@ if __name__ == '__main__':
     align_reads_parser.add_argument('--keep_temporary_files', action='store_true', help='Keeps all intermediate files used for the alignment. This parameter is manily good for bugfixing and development.')
     align_reads_parser.add_argument('--thinning', type=int, default=0, help='Seed thinning level (0-2): 0 (deactivated, default) 1 (in expectation every third base) or 2 (in expectation every fifth base). Thinning makes seedins step much faster and less memory consuming at cost of accuracy.')
     align_reads_parser.add_argument('--s', type=int, default=10, help='Strobe size (default s=10). Uses strobemers of (2, s, s+1, 35).')
+    align_reads_parser.add_argument('--no_temp_files', dest='use_temp_files', action='store_false', help='Disable per-process temp SAM output and use shared output queue.')
+    align_reads_parser.add_argument('--output_queue_size', type=int, default=50, help='Max size of output SAM queue when temp files are disabled (default 50).')
 
 
     group2 = align_reads_parser.add_mutually_exclusive_group()

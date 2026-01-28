@@ -57,9 +57,9 @@ def import_data(args):
     else:
         index_folder = args.outfolder
         
-    ref_segment_sequences = help_functions.pickle_load( os.path.join(index_folder, 'ref_segment_sequences.pickle') )
-    ref_exon_sequences = help_functions.pickle_load( os.path.join(index_folder, 'ref_exon_sequences.pickle') )
-    ref_flank_sequences = help_functions.pickle_load( os.path.join(index_folder, 'ref_flank_sequences.pickle') )
+    ref_segment_sequences = help_functions.load_sequence_store(index_folder, 'ref_segment_sequences')
+    ref_exon_sequences = help_functions.load_sequence_store(index_folder, 'ref_exon_sequences')
+    ref_flank_sequences = help_functions.load_sequence_store(index_folder, 'ref_flank_sequences')
     splices_to_transcripts = help_functions.pickle_load( os.path.join(index_folder, 'splices_to_transcripts.pickle') )
     transcripts_to_splices = help_functions.pickle_load( os.path.join(index_folder, 'transcripts_to_splices.pickle') )
     all_splice_pairs_annotations = help_functions.pickle_load( os.path.join(index_folder, 'all_splice_pairs_annotations.pickle') )
@@ -389,7 +389,7 @@ def get_mems_from_input(hits):
 
 
 
-def align_single(process_id, input_queue, output_sam_buffer, classification_and_aln_cov, args):
+def align_single(process_id, input_queue, output_sam_buffer, classification_and_aln_cov, args, output_path=None):
 
     # set counters
     nlog_n_instance_counter = 0
@@ -408,6 +408,9 @@ def align_single(process_id, input_queue, output_sam_buffer, classification_and_
     ref_exon_sequences, chr_to_id, id_to_chr = auxillary_data
 
     warning_log_file = open(os.path.join(args.outfolder, "uLTRA_batch_{0}.stderr".format(process_id)), "w")
+    output_file = None
+    if output_path:
+        output_file = open(output_path, "w")
     
     classification_list = [0, 0, 0, 0, 0, 0, 0, 0] # entries: [aln_cov, 'FSM', 'unaligned', 'NO_SPLICE', 'Insufficient_junction_coverage_unclassified', 'ISM/NIC_known', 'NIC_novel', 'NNC']
     # code: aln_cov (0), 'FSM' (1), 'unaligned' (2), 'NO_SPLICE' (3), 'Insufficient_junction_coverage_unclassified' (4), 'ISM/NIC_known' (5), 'NIC_novel' (6), 'NNC' (7)
@@ -550,12 +553,20 @@ def align_single(process_id, input_queue, output_sam_buffer, classification_and_
                     sam_aln_entry = sam_output.main(read_acc, read_seq, read_qual, id_to_chr[chr_id], classification, predicted_exons, read_aln, ref_aln, annotated_to_transcript_id, is_rc, is_secondary, map_score, aln_score = alignment_score)
                     alignments_output.append(sam_aln_entry)
         
-        output_sam_buffer.put(alignments_output)
+        if output_file:
+            output_file.write("".join(alignments_output))
+        else:
+            output_sam_buffer.put(alignments_output)
 
     classification_and_aln_cov.put(classification_list)
     print('Process:', classification_list)
 
     warning_log_file.close()
+    if output_file:
+        output_file.close()
+    help_functions.close_if_possible(ref_segment_sequences)
+    help_functions.close_if_possible(ref_exon_sequences)
+    help_functions.close_if_possible(ref_flank_sequences)
     print("Number of instances solved with quadratic collinear chainer solution:", quadratic_instance_counter)
     print("Number of instances solved with n*log n collinear chainer solution:", nlog_n_instance_counter)
     # return classifications
@@ -595,5 +606,4 @@ def align_single(process_id, input_queue, output_sam_buffer, classification_and_
 #     #     # print(r)
 #     # print("Time elapesd multiprocessing:", time() - start_multi)  
 #     # return classifications
-
 

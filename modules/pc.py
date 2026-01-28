@@ -1,4 +1,6 @@
 import sys
+import os
+import shutil
 import multiprocessing as mp
 from queue import Empty
 
@@ -24,9 +26,11 @@ def write(outfile, output_sam_buffer, tot_written):
             break
     return tot_written
 
-def file_IO(input_queue, reads, seeds, output_sam_buffer, outfile_name):
-    outfile = open(outfile_name, 'a')
+def file_IO(input_queue, reads, seeds, output_sam_buffer, outfile_name, use_temp_files):
+    outfile = None
     tot_written = 0
+    if not use_temp_files:
+        outfile = open(outfile_name, 'a')
     batch = []
     read_cnt = 1
     batch_id = 1
@@ -42,23 +46,26 @@ def file_IO(input_queue, reads, seeds, output_sam_buffer, outfile_name):
             batch = []
             batch_id += 1
         read_cnt += 1
+        buffer_write_cnt += 1
 
-        # reads_aln.append('\t'.join([s for s in [acc,seq, r_acc, r_acc_rev]])) 
+        # reads_aln.append('\t'.join([s for s in [acc,seq, r_acc, r_acc_rev]]))
         # if len(reads_aln) > 1000:
         #     output_sam_buffer.put(reads_aln)
         #     reads_aln = []
- 
-        if buffer_write_cnt >= 50000:
-           tot_written = write(outfile, output_sam_buffer, tot_written)
-           buffer_write_cnt = 0
+
+        if not use_temp_files and buffer_write_cnt >= 50000:
+            tot_written = write(outfile, output_sam_buffer, tot_written)
+            buffer_write_cnt = 0
 
     # last batch
     input_queue.put((batch_id, batch))
     input_queue.put(None)
-    tot_written = write(outfile, output_sam_buffer, tot_written)
+    if not use_temp_files:
+        tot_written = write(outfile, output_sam_buffer, tot_written)
     print('file_IO: Reading records done. Tot read:', read_cnt - 1)
     print('file_IO: Written records in producer process:', tot_written)
-    outfile.close()
+    if outfile:
+        outfile.close()
     return tot_written
 
 
@@ -66,19 +73,31 @@ def file_IO(input_queue, reads, seeds, output_sam_buffer, outfile_name):
 class Managers:
     def __init__(self, reads, seeds, outfile_name, n_proc, args):
         self.reads = reads
-        self.seeds = seeds    
-        self.outfile_name = outfile_name    
+        self.seeds = seeds
+        self.outfile_name = outfile_name
         self.m = mp.Manager()
         self.input_queue = self.m.Queue(200)
-        self.output_sam_buffer = self.m.Queue()
+        self.use_temp_files = getattr(args, "use_temp_files", True)
+        self.output_queue_size = getattr(args, "output_queue_size", 50)
+        self.output_sam_buffer = None
+        if not self.use_temp_files:
+            self.output_sam_buffer = self.m.Queue(self.output_queue_size)
         self.classification_and_aln_cov = self.m.Queue()
         self.n_proc = n_proc
         self.args = args
+        self.temp_files = []
+        if self.use_temp_files:
+            self.temp_files = [self.outfile_name + ".part{0}".format(i) for i in range(self.n_proc)]
 
     def start(self):
-        self.p = mp.Process(target=file_IO, args=(self.input_queue, self.reads, self.seeds, self.output_sam_buffer, self.outfile_name))
+        self.p = mp.Process(target=file_IO, args=(self.input_queue, self.reads, self.seeds, self.output_sam_buffer, self.outfile_name, self.use_temp_files))
         self.p.start()
-        self.workers = [mp.Process(target=align.align_single, args=(i, self.input_queue, self.output_sam_buffer, self.classification_and_aln_cov, self.args)) for i in range(self.n_proc)]
+        self.workers = []
+        for i in range(self.n_proc):
+            output_path = None
+            if self.use_temp_files:
+                output_path = self.temp_files[i]
+            self.workers.append(mp.Process(target=align.align_single, args=(i, self.input_queue, self.output_sam_buffer, self.classification_and_aln_cov, self.args, output_path)))
         for w in self.workers:
             w.start()
 
@@ -88,10 +107,18 @@ class Managers:
 
         self.p.join()
 
-        f = open(self.outfile_name,'a')
-        tot_written = write(f, self.output_sam_buffer, 0)
-        f.close()
-        print('file_IO: Remainig written records after consumer join:', tot_written)
+        if self.use_temp_files:
+            with open(self.outfile_name, 'a') as out_f:
+                for part_path in self.temp_files:
+                    if os.path.isfile(part_path):
+                        with open(part_path, 'r') as part_f:
+                            shutil.copyfileobj(part_f, out_f)
+                        os.remove(part_path)
+        else:
+            f = open(self.outfile_name,'a')
+            tot_written = write(f, self.output_sam_buffer, 0)
+            f.close()
+            print('file_IO: Remainig written records after consumer join:', tot_written)
 
         tot_counts = [0, 0, 0, 0, 0, 0, 0, 0] # entries: [aln_cov, 'FSM', 'unaligned', 'NO_SPLICE', 'Insufficient_junction_coverage_unclassified', 'ISM/NIC_known', 'NIC_novel', 'NNC']
         while True:

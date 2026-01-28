@@ -86,6 +86,21 @@ def pickle_load(filename):
     return data
 
 
+def load_sequence_store(index_folder, basename):
+    index_path = os.path.join(index_folder, basename + ".mmidx")
+    data_path = os.path.join(index_folder, basename + ".mmdata")
+    if os.path.isfile(index_path) and os.path.isfile(data_path):
+        from modules import mmap_store
+        return mmap_store.SequenceMmapStore(index_path, data_path)
+    return pickle_load(os.path.join(index_folder, basename + ".pickle"))
+
+
+def close_if_possible(obj):
+    close_fn = getattr(obj, "close", None)
+    if callable(close_fn):
+        close_fn()
+
+
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
